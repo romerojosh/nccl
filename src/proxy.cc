@@ -885,7 +885,7 @@ void* ncclProxyProgress(void *proxyState_) {
     lastIdle = idle;
     auto te = std::chrono::steady_clock::now();
     double duration = std::chrono::duration_cast<std::chrono::seconds>(te-ts).count();
-    if (duration > 30 && !stall_info_printed) {
+    if (duration > 300 && !stall_info_printed) {
       //printf("Detected stall!\n");
       dumpProxyState(state);
       stall_info_printed = true;
