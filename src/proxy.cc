@@ -15,6 +15,7 @@
 
 #include <sys/syscall.h>
 #include <assert.h>
+#include <chrono>
 
 enum { proxyRecv=0, proxySend=1 };
 
@@ -238,7 +239,7 @@ ncclResult_t getOpIndex(struct ncclProxyArgs* op, struct ncclProxyProgressState*
 }
 
 ncclResult_t printProxyOp(struct ncclProxyArgs* op, int poolIndex, int opIndex) {
-  printf("[%d-%d|%ld| %s", poolIndex, opIndex, op->opCount, op->pattern == ncclPatternSend ? "Send" : op->pattern == ncclPatternRecv ? "Recv" : "Coll");
+  //printf("[%d-%d|%ld| %s", poolIndex, opIndex, op->opCount, op->pattern == ncclPatternSend ? "Send" : op->pattern == ncclPatternRecv ? "Recv" : "Coll");
   for (int s=0; s<op->nsubs; s++) {
     struct ncclProxySubArgs* sub = op->subs+s;
     if (op->state == ncclProxyOpProgress) {
@@ -256,18 +257,23 @@ ncclResult_t printProxyOp(struct ncclProxyArgs* op, int poolIndex, int opIndex) 
         else if (sub->done < sub->transmitted) status = 'S'; // Sending
         else status = 'D'; // Done
       }
-      printf(" %d%c/%d", sub->peer, status, sub->channelId);
+      if (op->progress == netTransport.send.proxyProgress) {
+        INFO(NCCL_INIT,"send_dbg [%ld/%d/%ld/%ld/%ld/%d/%ld]", op->opCount, sub->channelId, sub->posted,
+	     sub->transmitted, sub->done, sub->nsteps, sub->transmitted - sub->done /* outstanding sends */);
+      } else if (op->progress == netTransport.recv.proxyProgress) {
+        INFO(NCCL_INIT,"recv_dbg [%ld/%d/%ld/%ld/%ld/%d/%ld]", op->opCount, sub->channelId, sub->posted,
+	     sub->received, sub->done, sub->nsteps, sub->posted - sub->received /* outstanding recvs */);
+      }
     } else {
       printf(" %d/%d", sub->peer, sub->channelId);
     }
   }
-  printf("]");
   return ncclSuccess;
 }
 ncclResult_t dumpProxyState(struct ncclProxyProgressState* state) {
   struct ncclProxyArgs* op = state->active;
   int poolIndex, opIndex;
-  printf("ACTIVE OPS\n");
+  //printf("ACTIVE OPS\n");
   while (op) {
     NCCLCHECK(getOpIndex(op, state, &poolIndex, &opIndex));
     if (op->state & OP_SEEN) {
@@ -275,7 +281,7 @@ ncclResult_t dumpProxyState(struct ncclProxyProgressState* state) {
     }
     NCCLCHECK(printProxyOp(op, poolIndex, opIndex));
     op->state |= OP_SEEN;
-    printf("\n");
+    //printf("\n");
     struct ncclProxyArgs* nextOp = op->nextPeer;
     while (nextOp) {
       NCCLCHECK(getOpIndex(nextOp, state, &poolIndex, &opIndex));
@@ -291,11 +297,11 @@ ncclResult_t dumpProxyState(struct ncclProxyProgressState* state) {
       }
       nextOp = nextOp->nextPeer;
     }
-    if (op->nextPeer == NULL) printf("|\n");
+    //if (op->nextPeer == NULL) printf("|\n");
     op = op->next;
-    printf("v\n");
+    //printf("v\n");
   }
-  printf("[X]\n");
+  //printf("[X]\n");
 
 # if 0
   printf("FREE OPS\n");
@@ -851,6 +857,8 @@ void* ncclProxyProgress(void *proxyState_) {
    * frequency of calling ncclProxyGetPostedOps() and reduce the perf impact. */
   int proxyOpAppendCounter = 0;
   struct ncclProxyArgs profArgs; // Only used for profiling purposes
+  auto ts = std::chrono::steady_clock::now();
+  bool stall_info_printed = false;
   while ((state->stop == false || (state->stop == true && state->active)) && *proxyState->abortFlag == 0) {
     int idle = 1;
     ncclResult_t ret = progressOps(proxyState, state, state->active, &idle);
@@ -875,6 +883,13 @@ void* ncclProxyProgress(void *proxyState_) {
       }
     }
     lastIdle = idle;
+    auto te = std::chrono::steady_clock::now();
+    double duration = std::chrono::duration_cast<std::chrono::seconds>(te-ts).count();
+    if (duration > 30 && !stall_info_printed) {
+      //printf("Detected stall!\n");
+      dumpProxyState(state);
+      stall_info_printed = true;
+    }
   }
   return NULL;
 }
