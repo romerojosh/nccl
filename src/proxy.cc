@@ -258,10 +258,16 @@ ncclResult_t printProxyOp(struct ncclProxyArgs* op, int poolIndex, int opIndex) 
         else status = 'D'; // Done
       }
       if (op->progress == netTransport.send.proxyProgress) {
-        INFO(NCCL_INIT,"send_dbg [%ld/%d/%ld/%ld/%ld/%d/%ld]", op->opCount, sub->channelId, sub->posted,
+        INFO(NCCL_INIT,"send_dbg %s %s [%ld/%d/%ld/%ld/%ld/%d/%ld]",
+	     (op->pattern == ncclPatternRing || op->pattern == ncclPatternRingTwice) ? "ring" : "tree",
+	     op->protocol == NCCL_PROTO_SIMPLE ? "simple" : op->protocol == NCCL_PROTO_LL ? "LL" : "LL128",
+	     op->opCount, sub->channelId, sub->posted,
 	     sub->transmitted, sub->done, sub->nsteps, sub->transmitted - sub->done /* outstanding sends */);
       } else if (op->progress == netTransport.recv.proxyProgress) {
-        INFO(NCCL_INIT,"recv_dbg [%ld/%d/%ld/%ld/%ld/%d/%ld]", op->opCount, sub->channelId, sub->posted,
+        INFO(NCCL_INIT,"recv_dbg %s %s [%ld/%d/%ld/%ld/%ld/%d/%ld]",
+	     (op->pattern == ncclPatternRing || op->pattern == ncclPatternRingTwice) ? "ring" : "tree",
+	     op->protocol == NCCL_PROTO_SIMPLE ? "simple" : op->protocol == NCCL_PROTO_LL ? "LL" : "LL128",
+             op->opCount, sub->channelId, sub->posted,
 	     sub->received, sub->done, sub->nsteps, sub->posted - sub->received /* outstanding recvs */);
       }
     } else {
